@@ -1,4 +1,4 @@
-# VAE
+# Autoencoders-101
 Implementation of different types of autoencoders in python using Keras library and a presentation about [Auto-Encoding Variational Bayes](https://arxiv.org/abs/1312.6114).
 
 Tasks:
