@@ -1,15 +1,13 @@
-from keras.layers import Input, Dense, Conv2D, Conv2DTranspose, Dropout
-from keras.layers import MaxPooling2D, UpSampling2D, Reshape, Flatten, concatenate
+from keras.layers import Input, Dense, Conv2D, Conv2DTranspose
+from keras.layers import MaxPooling2D, UpSampling2D, Reshape, Flatten
 from keras.models import Model
 from keras.callbacks import EarlyStopping, TensorBoard, ReduceLROnPlateau, ModelCheckpoint
-from keras.preprocessing.image import ImageDataGenerator
 from keras.datasets import fashion_mnist
 
-import imgaug as ia
 from imgaug import augmenters as iaa
 import numpy as np
-import cv2
 
+# Defining hyperparameters
 IMG_WIDTH = 56
 IMG_HEIGHT = 56
 IMG_CHANNELS = 1
@@ -19,14 +17,12 @@ EPOCHS = 15
 LR = 1e-4
 BATCH_SIZE = 64
 
+# Defining operations on images (double the size of an image and adding Gaussian noise)
 seq_res = iaa.Sequential([iaa.Resize((2.0, 2.0))])
 seq_aug = iaa.Sequential([iaa.AdditiveGaussianNoise(loc=0, scale=50)])
 
-def fixed_generator(generator):
-    for batch in generator:
-        yield (batch, batch)
 
-
+# Building autoencoder architecture
 def build_model(latent_dim):
     input = Input(shape=IMG_SHAPE)
 
@@ -76,6 +72,7 @@ def build_model(latent_dim):
     return autoencoder
 
 
+# Loading fashion mnist dataset and preparing it for training
 (x_train, _), (x_test, _) = fashion_mnist.load_data()
 x_train = np.expand_dims(x_train, axis=-1)
 x_test = np.expand_dims(x_test, axis=-1)
@@ -88,17 +85,20 @@ x_train = x_train/255.0
 x_test = x_test/255.0
 
 
+# Making models for 1, 2, 4, 8 and 16 neurons in bottleneck
 for i in [1, 2, 4, 8, 16]:
     autoencoder = build_model(i)
 
+    # Compiling a model with binary crossentropy as loss
     autoencoder.compile(optimizer='adam', loss='binary_crossentropy')
 
+    # Defining training callbacks
     tbCallback = TensorBoard(log_dir='logs/latent_' + str(i), batch_size=1)
     esCallback = EarlyStopping(monitor='val_loss', patience=8)
     mcCallback = ModelCheckpoint('models/latent_' + str(i) + '/simple_autoencoder.h5', save_best_only=True, save_weights_only=False)
-    rlrCallback = ReduceLROnPlateau(monitor='val_loss', factor = 0.5, patience=3, min_lr=1e-6)
+    rlrCallback = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-6)
 
-
+    # Training
     autoencoder.fit(x_train_aug, x_train,
                     validation_data=(x_test_aug, x_test),
                     batch_size=BATCH_SIZE,

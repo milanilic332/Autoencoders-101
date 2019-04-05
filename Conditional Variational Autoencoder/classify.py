@@ -1,25 +1,32 @@
-from keras.layers import Dense, Input, Dropout, concatenate
+from keras.layers import Dense, Input, concatenate
 from keras.layers import Conv2D, Flatten, Lambda
 from keras.layers import Reshape, Conv2DTranspose
 from keras.layers import MaxPooling2D, UpSampling2D
 from keras.models import Model
 from keras.datasets import fashion_mnist
-from keras.losses import mse, binary_crossentropy
-from keras.utils import plot_model
+from keras.losses import binary_crossentropy
 from keras.optimizers import Adam
-from keras.preprocessing.image import ImageDataGenerator
 from keras.callbacks import TensorBoard, EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from keras import backend as K
-import cv2
 
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
-import os
-import imgaug as ia
-from imgaug import augmenters as iaa
 
 
+# Defining hyperparameters
+IMG_WIDTH = 28
+IMG_HEIGHT = 28
+IMG_CHANNELS = 1
+IMG_SHAPE = (IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS)
+
+EPOCHS = 15
+LR = 1e-4
+BATCH_SIZE = 16
+LATENT_DIM = 2
+
+
+# Reparameterization trick
 def sampling(args):
     z_mean, z_log_var = args
     batch = K.shape(z_mean)[0]
@@ -27,23 +34,15 @@ def sampling(args):
     epsilon = K.random_normal(shape=(batch, dim))
     return z_mean + K.exp(0.5 * z_log_var) * epsilon
 
+
+# Loss function (Reconstruction loss + KL between q(z | x) and N(0, 1)
 def func_vae_loss(y_true, y_pred):
-    reconstruction_loss = 28*28*mse(K.flatten(input_image), K.flatten(outputs))
+    reconstruction_loss = IMG_HEIGHT*IMG_WIDTH*binary_crossentropy(K.flatten(input_image), K.flatten(outputs))
     kl_loss = -0.5*K.sum(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), axis=-1)
     return K.mean(reconstruction_loss + kl_loss)
 
 
-IMG_WIDTH = 28
-IMG_HEIGHT = 28
-IMG_CHANNELS = 1
-IMG_SHAPE = (IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS)
-
-EPOCHS = 5
-LR = 1e-4
-BATCH_SIZE = 16
-LATENT_DIM = 2
-
-
+# Build CVAE architecture
 input_image = Input(shape=IMG_SHAPE)
 input_cond = Input(shape=(10,))
 
@@ -65,6 +64,7 @@ z_log_var = Dense(LATENT_DIM, name='z_log_var')(encoding)
 
 z = Lambda(sampling, output_shape=(LATENT_DIM,), name='z')([z_mean, z_log_var])
 
+# Encoder model (Input: [image, one-hot label]; Output: mu and sigma)
 encoder = Model([input_image, input_cond], [z_mean, z_log_var, z])
 encoder.summary()
 
@@ -87,20 +87,21 @@ decoding = UpSampling2D((2, 2))(decoding)
 
 outputs = Conv2DTranspose(filters=1, kernel_size=3, activation='sigmoid', padding='same')(decoding)
 
+# Decoder model (Input: [n-dimensional point (sample), one-hot label]; Output: image)
 decoder = Model([latent, input_cond], outputs)
 decoder.summary()
 
 
-
 outputs = decoder([encoder([input_image, input_cond])[2], input_cond])
 
+# VAE model (Input: image; Output: reconstructed image)
 vae = Model([input_image, input_cond], outputs)
 
-optimizer = Adam(LR)
-vae.compile(optimizer=optimizer, loss=func_vae_loss)
+# Compiling model
+vae.compile(optimizer=Adam(LR), loss=func_vae_loss)
 vae.summary()
 
-
+# Loading fashion mnist dataset and preparing it for training
 (x_train, y_train_), (x_test, y_test_) = fashion_mnist.load_data()
 y_train = np.zeros((y_train_.shape[0], 10))
 y_train[np.arange(y_train_.shape[0]), y_train_] = 1
@@ -112,6 +113,7 @@ x_train = np.expand_dims(x_train, axis=-1)/255.0
 x_test = np.expand_dims(x_test, axis=-1)/255.0
 
 
+# Plotting clothes around (0, 0) for label [0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
 def plot_clothes():
     n = 30
     figure = np.zeros((IMG_WIDTH * n, IMG_HEIGHT * n))
@@ -132,13 +134,13 @@ def plot_clothes():
 
 
 if __name__ == '__main__':
-
+    # Defining training callbacks
     tbCallback = TensorBoard(log_dir='logs/', batch_size=1)
     esCallback = EarlyStopping(monitor='val_loss', patience=5)
-    mcCallback = ModelCheckpoint('models/simple_autoencoder.h5', save_best_only=True, save_weights_only=False)
-    rlrCallback = ReduceLROnPlateau(monitor='val_loss', factor = 0.5, patience=2, min_lr=1e-6)
+    mcCallback = ModelCheckpoint('models/cvae.h5', save_best_only=True, save_weights_only=False)
+    rlrCallback = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=2, min_lr=1e-6)
 
-
+    # Training
     vae.fit([x_train, y_train], x_train,
             validation_data=([x_test, y_test], x_test),
             batch_size=BATCH_SIZE,

@@ -7,4 +7,4 @@ Tasks:
 - [x] Denoiseing Autoencoder
 - [x] Variational Autoencoder
 - [x] Conditional Variational Autoencoder
-- [ ] Presentation
+- [x] Presentation
